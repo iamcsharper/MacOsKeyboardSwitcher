@@ -3,6 +3,7 @@
 
 @interface AppDelegate ()
 
+@property (nonatomic, assign) BOOL shiftKeyPressed;
 
 @end
 
@@ -75,8 +76,13 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     NSEvent *nsEvent = [NSEvent eventWithCGEvent:event];
     NSEventModifierFlags modifiers = nsEvent.modifierFlags & (NSEventModifierFlagCommand | NSEventModifierFlagShift);
     
-    if ((modifiers == (NSEventModifierFlagCommand | NSEventModifierFlagShift))) {
-        [self switchToNextKeyboardLayout];
+    if (type == kCGEventFlagsChanged) {
+        if (modifiers & NSEventModifierFlagShift) {
+            self.shiftKeyPressed = YES;
+        } else if (self.shiftKeyPressed) {
+            self.shiftKeyPressed = NO;
+            [self switchToNextKeyboardLayout];
+        }
     }
     
     return event;
