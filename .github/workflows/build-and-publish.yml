@@ -1,0 +1,35 @@
+name: Build and Publish macOS App
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Set up Xcode
+      run: |
+        sudo xcode-select -switch /Applications/Xcode.app
+
+    - name: Build the app
+      run: |
+        clang -framework AppKit -framework Carbon -o KeyboardSwitcher AppDelegate.m main.m
+        mkdir -p KeyboardSwitcher.app/Contents/MacOS
+        cp KeyboardSwitcher KeyboardSwitcher.app/Contents/MacOS/
+        cp Info.plist KeyboardSwitcher.app/Contents/
+
+    - name: Zip the app
+      run: |
+        zip -r KeyboardSwitcher.app.zip KeyboardSwitcher.app
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: KeyboardSwitcher.app
+        path: KeyboardSwitcher.app.zip
