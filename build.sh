@@ -1,3 +1,5 @@
+rm KeyboardSwitcher
+
 clang -framework AppKit -framework Carbon -o KeyboardSwitcher AppDelegate.m main.m
 
 mkdir -p KeyboardSwitcher.app

@@ -3,7 +3,7 @@
 
 @interface AppDelegate ()
 
-@property (nonatomic, assign) BOOL shiftKeyPressed;
+@property (nonatomic, assign) BOOL commandShiftPressed; // Track if Command + Shift was pressed
 
 @end
 
@@ -69,6 +69,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     AppDelegate *self = (__bridge AppDelegate *)userInfo;
     
     if (type == kCGEventTapDisabledByTimeout) {
+        // Re-enable the event tap if it gets disabled due to timeout
         CGEventTapEnable(self.eventTap, true);
         return NULL;
     }
@@ -76,16 +77,42 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     NSEvent *nsEvent = [NSEvent eventWithCGEvent:event];
     NSEventModifierFlags modifiers = nsEvent.modifierFlags & (NSEventModifierFlagCommand | NSEventModifierFlagShift);
     
-    if (type == kCGEventFlagsChanged) {
-        if (modifiers & NSEventModifierFlagShift) {
-            self.shiftKeyPressed = YES;
-        } else if (self.shiftKeyPressed) {
-            self.shiftKeyPressed = NO;
-            [self switchToNextKeyboardLayout];
+    if (type == kCGEventKeyDown) {
+        // If any key (not a modifier) is pressed while Command+Shift is active, cancel the tracking
+        if (self.commandShiftPressed && ![self isModifierKey:nsEvent]) {
+            self.commandShiftPressed = NO;
+            NSLog(@"Cancelled Command+Shift tracking because another key was pressed");
         }
+    } else if (type == kCGEventFlagsChanged) {
+        // Check if both Command and Shift are pressed
+        if (modifiers == (NSEventModifierFlagCommand | NSEventModifierFlagShift)) {
+            if (!self.commandShiftPressed) {
+                self.commandShiftPressed = YES; // Mark as Command + Shift pressed
+                NSLog(@"Command+Shift pressed");
+            }
+        } 
+        // Check if Command+Shift was previously pressed and now both are released
+        else if (self.commandShiftPressed && modifiers == 0) {
+            [self switchToNextKeyboardLayout];
+            self.commandShiftPressed = NO; // Reset the flag
+            NSLog(@"Command+Shift released, switching layout");
+        } 
+        // Only cancel if another modifier key like Control or Option is pressed
+        else if (self.commandShiftPressed && 
+                (nsEvent.modifierFlags & (NSEventModifierFlagControl | NSEventModifierFlagOption))) {
+            self.commandShiftPressed = NO;
+            NSLog(@"Cancelled Command+Shift tracking due to other modifier key pressed");
+        }
+        // Otherwise keep tracking - one of Command or Shift might still be down
     }
     
     return event;
+}
+
+// Helper method to check if the key is a modifier key
+- (BOOL)isModifierKey:(NSEvent *)event {
+    return event.keyCode == kVK_Command || event.keyCode == kVK_Shift ||
+           event.keyCode == kVK_Control || event.keyCode == kVK_Option;
 }
 
 - (void)switchToNextKeyboardLayout {
