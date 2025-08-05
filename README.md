@@ -24,6 +24,9 @@ A lightweight macOS utility that lets you cycle between input sources using **�
 - 🔑 Permission Issues
 Re-check Accessibility permissions
 Add the app in Security & Privacy settings
+
+Use this for add KeyboardSwitcher to autostart (and start)
+- sh ./autostart.sh
  
 ## 📝 Debugging
 
