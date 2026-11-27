@@ -1,9 +1,17 @@
 #import "AppDelegate.h"
 #import <Carbon/Carbon.h>
 
+typedef NS_ENUM(NSUInteger, CommandShiftState) {
+    CommandShiftIdle,
+    CommandShiftArmed,
+    CommandShiftConsumed,
+};
+
 @interface AppDelegate ()
 
-@property (nonatomic, assign) BOOL commandShiftPressed; // Track if Command + Shift was pressed
+@property (nonatomic, assign) CommandShiftState commandShiftState;
+
+- (void)switchToNextKeyboardLayout;
 
 @end
 
@@ -67,52 +75,42 @@
 
 CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef event, void *userInfo) {
     AppDelegate *self = (__bridge AppDelegate *)userInfo;
-    
+
     if (type == kCGEventTapDisabledByTimeout) {
-        // Re-enable the event tap if it gets disabled due to timeout
+        self.commandShiftState = CommandShiftConsumed;
         CGEventTapEnable(self.eventTap, true);
         return NULL;
     }
-    
-    NSEvent *nsEvent = [NSEvent eventWithCGEvent:event];
-    NSEventModifierFlags modifiers = nsEvent.modifierFlags & (NSEventModifierFlagCommand | NSEventModifierFlagShift);
-    
-    if (type == kCGEventKeyDown) {
-        // If any key (not a modifier) is pressed while Command+Shift is active, cancel the tracking
-        if (self.commandShiftPressed && ![self isModifierKey:nsEvent]) {
-            self.commandShiftPressed = NO;
-            NSLog(@"Cancelled Command+Shift tracking because another key was pressed");
-        }
-    } else if (type == kCGEventFlagsChanged) {
-        // Check if both Command and Shift are pressed
-        if (modifiers == (NSEventModifierFlagCommand | NSEventModifierFlagShift)) {
-            if (!self.commandShiftPressed) {
-                self.commandShiftPressed = YES; // Mark as Command + Shift pressed
-                NSLog(@"Command+Shift pressed");
-            }
-        } 
-        // Check if Command+Shift was previously pressed and now both are released
-        else if (self.commandShiftPressed && modifiers == 0) {
-            [self switchToNextKeyboardLayout];
-            self.commandShiftPressed = NO; // Reset the flag
-            NSLog(@"Command+Shift released, switching layout");
-        } 
-        // Only cancel if another modifier key like Control or Option is pressed
-        else if (self.commandShiftPressed && 
-                (nsEvent.modifierFlags & (NSEventModifierFlagControl | NSEventModifierFlagOption))) {
-            self.commandShiftPressed = NO;
-            NSLog(@"Cancelled Command+Shift tracking due to other modifier key pressed");
-        }
-        // Otherwise keep tracking - one of Command or Shift might still be down
-    }
-    
-    return event;
-}
 
-// Helper method to check if the key is a modifier key
-- (BOOL)isModifierKey:(NSEvent *)event {
-    return event.keyCode == kVK_Command || event.keyCode == kVK_Shift ||
-           event.keyCode == kVK_Control || event.keyCode == kVK_Option;
+    if (type == kCGEventKeyDown) {
+        if (self.commandShiftState == CommandShiftArmed) {
+            self.commandShiftState = CommandShiftConsumed;
+        }
+        return event;
+    }
+
+    const CGEventFlags chord = kCGEventFlagMaskCommand | kCGEventFlagMaskShift;
+    const CGEventFlags otherModifiers = kCGEventFlagMaskControl | kCGEventFlagMaskAlternate |
+                                        kCGEventFlagMaskSecondaryFn;
+    CGEventFlags flags = CGEventGetFlags(event);
+    CGEventFlags modifiers = flags & chord;
+
+    if (modifiers == chord && self.commandShiftState == CommandShiftIdle) {
+        self.commandShiftState = CommandShiftArmed;
+    }
+    if ((flags & otherModifiers) && self.commandShiftState == CommandShiftArmed) {
+        self.commandShiftState = CommandShiftConsumed;
+    }
+    // The next event can already be Cmd+Tab if Shift is released first.
+    if (modifiers != chord && self.commandShiftState == CommandShiftArmed) {
+        self.commandShiftState = CommandShiftConsumed;
+        [self switchToNextKeyboardLayout];
+    }
+    if (modifiers == 0) {
+        self.commandShiftState = CommandShiftIdle;
+    }
+
+    return event;
 }
 
 - (void)switchToNextKeyboardLayout {
@@ -120,40 +118,21 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
         (__bridge NSString *)kTISPropertyInputSourceCategory: (__bridge NSString *)kTISCategoryKeyboardInputSource,
         (__bridge NSString *)kTISPropertyInputSourceIsSelectCapable: @YES
     }, false));
-    
-    NSLog(@"Number of keyboard sources: %lu", (unsigned long)sources.count);
-    
-    for (id source in sources) {
-        NSString *name = (__bridge NSString *)TISGetInputSourceProperty((__bridge TISInputSourceRef)source, kTISPropertyLocalizedName);
-        NSString *sourceID = (__bridge NSString *)TISGetInputSourceProperty((__bridge TISInputSourceRef)source, kTISPropertyInputSourceID);
-        NSLog(@"Available source: %@ (ID: %@)", name, sourceID);
+    if (sources.count == 0) {
+        return;
     }
-    
+
     TISInputSourceRef current = TISCopyCurrentKeyboardInputSource();
-    NSString *currentName = (__bridge NSString *)TISGetInputSourceProperty(current, kTISPropertyLocalizedName);
-    NSString *currentID = (__bridge NSString *)TISGetInputSourceProperty(current, kTISPropertyInputSourceID);
-    NSLog(@"Current keyboard source: %@ (ID: %@)", currentName, currentID);
-    
-    NSUInteger index = [sources indexOfObject:(__bridge id)current];
-    CFRelease(current);
-    
-    if (index == NSNotFound) {
-        NSLog(@"Current source not found in available sources. Defaulting to first source.");
-        index = 0;
-    } else {
-        index = (index + 1) % sources.count;
+    NSUInteger index = current ? [sources indexOfObject:(__bridge id)current] : NSNotFound;
+    if (current) {
+        CFRelease(current);
     }
-    
+    index = index == NSNotFound ? 0 : (index + 1) % sources.count;
+
     TISInputSourceRef next = (__bridge TISInputSourceRef)sources[index];
-    NSString *nextName = (__bridge NSString *)TISGetInputSourceProperty(next, kTISPropertyLocalizedName);
-    NSString *nextID = (__bridge NSString *)TISGetInputSourceProperty(next, kTISPropertyInputSourceID);
-    NSLog(@"Attempting to switch to: %@ (ID: %@)", nextName, nextID);
-    
-    Boolean success = TISSelectInputSource(next);
-    if (success) {
-        NSLog(@"Successfully switched keyboard layout.");
-    } else {
-        NSLog(@"Failed to switch keyboard layout.");
+    OSStatus status = TISSelectInputSource(next);
+    if (status != noErr) {
+        NSLog(@"Failed to switch keyboard layout (OSStatus %d).", (int)status);
     }
 }
 
