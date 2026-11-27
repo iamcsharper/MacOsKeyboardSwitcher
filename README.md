@@ -7,6 +7,10 @@ A lightweight macOS utility that lets you cycle between input sources using **�
 <img src="https://img.shields.io/badge/requires-10.15%2B-blue?style=flat&logo=apple" alt="macOS Version"> 
 <img src="https://img.shields.io/badge/license-MIT-green?style=flat" alt="License">
 
+## Переключатель раскладки клавиатуры для macOS
+
+MacOsKeyboardSwitcher переключает язык ввода на Mac по сочетанию **⌘ Command + Shift**. Утилита работает в фоне и по очереди выбирает раскладки, включённые в настройках macOS. Чтобы она запускалась при входе в систему, установи приложение в `/Applications` и один раз выполни `sh ./autostart.sh`.
+
 ## ✨ Features
 
 - 🔥 **Instant switching** with ⌘ Cmd + Shift hotkey
